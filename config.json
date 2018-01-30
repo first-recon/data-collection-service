@@ -1,0 +1,4 @@
+{
+    "interval": 24,
+    "url": "https://es01.usfirst.org/teams/_search?size=10000&from=0&source={%22query%22:{%22filtered%22:{%22query%22:{%22bool%22:{%22must%22:[{%22bool%22:{%22should%22:[[{%22match%22:{%22team_type%22:%22FTC%22}}]]}},{%22bool%22:{%22should%22:[[{%22match%22:{%22fk_program_seasons%22:%22251%22}},{%22match%22:{%22fk_program_seasons%22:%22249%22}},{%22match%22:{%22fk_program_seasons%22:%22253%22}},{%22match%22:{%22fk_program_seasons%22:%22247%22}}]]}}]}}}},%22sort%22:%22team_nickname.raw%22}"
+}
