@@ -2,7 +2,12 @@ const express = require('express');
 const https = require('https');
 const request = require('request-promise-native');
 const fs = require('fs');
+const pgEscape = require('pg-escape');
+const { Client } = require('pg');
 const config = require('./config');
+
+const client = new Client(config.postgres);
+client.connect();
 
 const server = express();
 
@@ -12,15 +17,51 @@ const state = {
   currentState: 'IDLE'
 };
 
+const createEventQuery = (args) => `insert into events (id, name, venue, type, season, date_start, date_end, location_street, location_postalCode, location_city, location_state, location_country) values (${args.join(',')})`;
+
+function save (table, data) {
+  return new Promise((resolve, reject) => {
+    // client.query(, (err, { rows }) => {
+    //   console.log(rows);
+    //   resolve();
+    // });
+    Promise.all(data.map(({ id, name, venue, type, season, date, location }) => {
+      return createEventQuery([
+        id,
+        `${pgEscape.dollarQuotedString(name)}`,
+        `${pgEscape.dollarQuotedString(venue)}`,
+        `${pgEscape.dollarQuotedString(type)}`,
+        season,
+        new Date(date.start).getTime() / 1000,
+        new Date(date.end).getTime() / 1000,
+        `${pgEscape.dollarQuotedString(location.street)}`,
+        location.postalCode,
+        `${pgEscape.dollarQuotedString(location.city)}`,
+        `${pgEscape.dollarQuotedString(location.state)}`,
+        `${pgEscape.dollarQuotedString(location.country)}`
+      ]);
+    }).map((query) => {
+      return new Promise((res, rej) => {
+        client.query(query, (error, results) => {
+          if (error) {
+            console.log(`Error with query: ${query}`);
+            console.log(error);
+            rej(error);
+          } else {
+            res(results.rows);
+          }
+        });
+      });
+    })).then(resolve).catch(console.log);
+  });
+}
+
 server.get('/status', (req, res) => {
   res.send(state);
 });
 
 server.listen(3000, () => {
   console.log('Data collection service running, status endpoint on port 3000...');
-
-  // SQL Team schema
-  // integer id, integer number, varchar name, boolean saved (if team is saved we don't push changes to it's *name* from FIRST)
 
   // map FIRST's data formats to Recon's, stripping out any data we don't need
   function convertFormat(type, source) {
@@ -39,7 +80,7 @@ server.listen(3000, () => {
           start: source.date_start,
           end: source.date_end
         },
-        year: source.event_season,
+        season: source.event_season,
         type: source.event_subtype,
         location: {
           street: source.event_address1,
@@ -82,8 +123,8 @@ server.listen(3000, () => {
       return JSON.parse(response);
     })
     .then(esData => esData.hits.hits.map(item => convertFormat('team', item._source)))
-    .then((teams) => {
-      fs.writeFileSync('teams.json', JSON.stringify(teams));
+    // .then((teams) => save('teams'))
+    .then(() => {
       return request({
         url: getRequestUrl('events', config.size),
         method: 'GET',
@@ -98,10 +139,13 @@ server.listen(3000, () => {
     .then(JSON.parse)
     .then(esData => esData.hits.hits.map(item => convertFormat('event', item._source)))
     .then((events) => {
-      fs.writeFileSync('events.json', JSON.stringify(events));
-      state.currentState = 'IDLE';
-      console.log(`Update complete. Next update in ${config.interval} hours.`);
-      setTimeout(fetchUpdates, INTERVAL_MS);
+      return save('events', events)
+        .then(() => {
+          // fs.writeFileSync('events.json', JSON.stringify(events));
+          state.currentState = 'IDLE';
+          console.log(`Update complete. Next update in ${config.interval} hours.`);
+          setTimeout(fetchUpdates, INTERVAL_MS);
+        });
     })
     .catch((error) => {
       console.log(error);

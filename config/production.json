@@ -1,0 +1,11 @@
+{
+    "interval": 24,
+    "size": 10000,
+    "postgres": {
+        "user": "postgres",
+        "password": "postgres",
+        "database": "postgres",
+        "host": "recon-db",
+        "port": 5432
+    }
+}
