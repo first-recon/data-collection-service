@@ -18,28 +18,31 @@ const state = {
 };
 
 const createEventQuery = (args) => `insert into events (id, name, venue, type, season, date_start, date_end, location_street, location_postalCode, location_city, location_state, location_country) values (${args.join(',')})`;
+const createTeamQuery = (args) => `insert into teams (id, name, number) values (${args.join(',')})`;
 
-function save (table, data) {
+function save (table, items) {
   return new Promise((resolve, reject) => {
-    // client.query(, (err, { rows }) => {
-    //   console.log(rows);
-    //   resolve();
-    // });
-    Promise.all(data.map(({ id, name, venue, type, season, date, location }) => {
-      return createEventQuery([
-        id,
-        `${pgEscape.dollarQuotedString(name)}`,
-        `${pgEscape.dollarQuotedString(venue)}`,
-        `${pgEscape.dollarQuotedString(type)}`,
-        season,
-        new Date(date.start).getTime() / 1000,
-        new Date(date.end).getTime() / 1000,
-        `${pgEscape.dollarQuotedString(location.street)}`,
-        location.postalCode,
-        `${pgEscape.dollarQuotedString(location.city)}`,
-        `${pgEscape.dollarQuotedString(location.state)}`,
-        `${pgEscape.dollarQuotedString(location.country)}`
-      ]);
+    Promise.all(items.map((item) => {
+      if (table === 'teams') {
+        const { id, name, number } = item;
+        return createTeamQuery([id, `${pgEscape.dollarQuotedString(name)}`, number]);
+      } else if (table === 'events') {
+        const { id, name, venue, type, season, date, location } = item;
+        return createEventQuery([
+          id,
+          `${pgEscape.dollarQuotedString(name)}`,
+          `${pgEscape.dollarQuotedString(venue)}`,
+          `${pgEscape.dollarQuotedString(type)}`,
+          season,
+          new Date(date.start).getTime() / 1000,
+          new Date(date.end).getTime() / 1000,
+          `${pgEscape.dollarQuotedString(location.street)}`,
+          location.postalCode,
+          `${pgEscape.dollarQuotedString(location.city)}`,
+          `${pgEscape.dollarQuotedString(location.state)}`,
+          `${pgEscape.dollarQuotedString(location.country)}`
+        ]);
+      }
     }).map((query) => {
       return new Promise((res, rej) => {
         client.query(query, (error, results) => {
@@ -102,7 +105,6 @@ server.listen(3000, () => {
   }
 
   // set up task to scrape FIRST's database for updates
-  // TODO: should probably make this a
   (function fetchUpdates() {
     console.log('fetching updates...');
     state.currentState = 'DOWNLOADING'; 
@@ -123,7 +125,7 @@ server.listen(3000, () => {
       return JSON.parse(response);
     })
     .then(esData => esData.hits.hits.map(item => convertFormat('team', item._source)))
-    // .then((teams) => save('teams'))
+      .then((teams) => save('teams', teams))
     .then(() => {
       return request({
         url: getRequestUrl('events', config.size),
