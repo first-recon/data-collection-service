@@ -21,41 +21,34 @@ const createEventQuery = (args) => `insert into events (id, name, venue, type, s
 const createTeamQuery = (args) => `insert into teams (id, name, number) values (${args.join(',')})`;
 
 function save (table, items) {
-  return new Promise((resolve, reject) => {
-    Promise.all(items.map((item) => {
-      if (table === 'teams') {
-        const { id, name, number } = item;
-        return createTeamQuery([id, `${pgEscape.dollarQuotedString(name)}`, number]);
-      } else if (table === 'events') {
-        const { id, name, venue, type, season, date, location } = item;
-        return createEventQuery([
-          id,
-          `${pgEscape.dollarQuotedString(name)}`,
-          `${pgEscape.dollarQuotedString(venue)}`,
-          `${pgEscape.dollarQuotedString(type)}`,
-          season,
-          new Date(date.start).getTime() / 1000,
-          new Date(date.end).getTime() / 1000,
-          `${pgEscape.dollarQuotedString(location.street)}`,
-          location.postalCode,
-          `${pgEscape.dollarQuotedString(location.city)}`,
-          `${pgEscape.dollarQuotedString(location.state)}`,
-          `${pgEscape.dollarQuotedString(location.country)}`
-        ]);
+  items.map((item) => {
+    if (table === 'teams') {
+      const { id, name, number } = item;
+      return createTeamQuery([id, `${pgEscape.dollarQuotedString(name)}`, number]);
+    } else if (table === 'events') {
+      const { id, name, venue, type, season, date, location } = item;
+      return createEventQuery([
+        id,
+        `${pgEscape.dollarQuotedString(name)}`,
+        `${pgEscape.dollarQuotedString(venue)}`,
+        `${pgEscape.dollarQuotedString(type)}`,
+        season,
+        new Date(date.start).getTime() / 1000,
+        new Date(date.end).getTime() / 1000,
+        `${pgEscape.dollarQuotedString(location.street)}`,
+        location.postalCode,
+        `${pgEscape.dollarQuotedString(location.city)}`,
+        `${pgEscape.dollarQuotedString(location.state)}`,
+        `${pgEscape.dollarQuotedString(location.country)}`
+      ]);
+    }
+  }).map((query) => {
+    client.query(query, (error, results) => {
+      if (error) {
+        console.log(`Error with query: ${query}`);
+        // console.log(error);
       }
-    }).map((query) => {
-      return new Promise((res, rej) => {
-        client.query(query, (error, results) => {
-          if (error) {
-            console.log(`Error with query: ${query}`);
-            console.log(error);
-            rej(error);
-          } else {
-            res(results.rows);
-          }
-        });
-      });
-    })).then(resolve).catch(console.log);
+    });
   });
 }
 
@@ -125,34 +118,24 @@ server.listen(3000, () => {
       return JSON.parse(response);
     })
     .then(esData => esData.hits.hits.map(item => convertFormat('team', item._source)))
-      .then((teams) => save('teams', teams))
-    .then(() => {
-      return request({
-        url: getRequestUrl('events', config.size),
-        method: 'GET',
-        agent: new https.Agent({
-          host: 'es01.usfirst.org',
-          port: 443,
-          path: '/',
-          rejectUnauthorized: false
-        })
-      });
+    .then((teams) => {
+      save('teams', teams);
+    });
+
+    request({
+      url: getRequestUrl('events', config.size),
+      method: 'GET',
+      agent: new https.Agent({
+        host: 'es01.usfirst.org',
+        port: 443,
+        path: '/',
+        rejectUnauthorized: false
+      })
     })
     .then(JSON.parse)
     .then(esData => esData.hits.hits.map(item => convertFormat('event', item._source)))
     .then((events) => {
-      return save('events', events)
-        .then(() => {
-          // fs.writeFileSync('events.json', JSON.stringify(events));
-          state.currentState = 'IDLE';
-          console.log(`Update complete. Next update in ${config.interval} hours.`);
-          setTimeout(fetchUpdates, INTERVAL_MS);
-        });
-    })
-    .catch((error) => {
-      console.log(error);
-      console.log(`Request failed with above error, retrying in ${config.interval} hours...`);
-      setTimeout(fetchUpdates, INTERVAL_MS);
+      save('events', events);
     });
   })();
 });
