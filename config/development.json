@@ -5,7 +5,16 @@
         "user": "postgres",
         "password": "postgres",
         "database": "postgres",
-        "host": "192.168.99.100",
+        "host": "localhost",
         "port": 5432
-    }
+    },
+    "date_range": {
+        "start": "2018-09-01",
+        "end": "2019-09-01"
+    },
+    "sync_tables": {
+        "teams": true,
+        "events": true
+    },
+    "port": 2999
 }

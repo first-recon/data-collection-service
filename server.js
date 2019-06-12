@@ -17,8 +17,43 @@ const state = {
   currentState: 'IDLE'
 };
 
-const createEventQuery = (args) => `insert into events (id, name, venue, type, season, date_start, date_end, location_street, location_postalCode, location_city, location_state, location_country) values (${args.join(',')})`;
-const createTeamQuery = (args) => `insert into teams (id, name, number) values (${args.join(',')})`;
+const eventReq = {
+  'query': {
+    'filtered': {
+      'query': {
+        'bool': {
+          'must': [
+            {
+              'bool': {
+                'should': [
+                  [
+                    {
+                      'match': {
+                        'event_type': 'FTC'
+                      }
+                    }
+                  ]
+                ]
+              }
+            },
+            {
+              'range': {
+                'date_end': {
+                  'gte': config.date_range.start,
+                  'lte': config.date_range.end
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  'sort': 'event_name.raw'
+};
+
+const createEventQuery = (args) => `insert into events.events (id, name, venue, type, season, date_start, date_end, location_street, location_postalCode, location_city, location_state, location_country) values (${args.join(',')})`;
+const createTeamQuery = (args) => `insert into teams.teams (id, name, number) values (${args.join(',')})`;
 
 function save (table, items) {
   items.map((item) => {
@@ -46,7 +81,8 @@ function save (table, items) {
     client.query(query, (error, results) => {
       if (error) {
         console.log(`Error with query: ${query}`);
-        // console.log(error);
+      } else {
+        console.log(`finished fetching updates for ${table}`);
       }
     });
   });
@@ -56,7 +92,7 @@ server.get('/status', (req, res) => {
   res.send(state);
 });
 
-server.listen(3000, () => {
+server.listen(config.port, () => {
   console.log('Data collection service running, status endpoint on port 3000...');
 
   // map FIRST's data formats to Recon's, stripping out any data we don't need
@@ -65,7 +101,7 @@ server.listen(3000, () => {
       return {
         id: source.id,
         number: source.team_number_yearly,
-        name: source.team_name_calc
+        name: source.team_nickname
       };
     } else if (type === 'event') {
       return {
@@ -91,7 +127,7 @@ server.listen(3000, () => {
 
   function getRequestUrl(type, size=10000) {
     if (type === 'events') {
-      return `https://es01.usfirst.org/events/_search?size=${size}&from=0&source={"query":{"filtered":{"query":{"bool":{"must":[{"bool":{"should":[[{"match":{"event_type":"FTC"}}]]}},{"bool":{"should":[[{"match":{"fk_program_seasons":"251"}},{"match":{"fk_program_seasons":"249"}},{"match":{"fk_program_seasons":"253"}},{"match":{"fk_program_seasons":"247"}}]]}},{"range":{"date_end":{"gte":"2017-09-01","lte":"2018-09-01"}}}]}}}},"sort":"event_name.raw"}`;
+      return `https://es01.usfirst.org/events/_search?size=${size}&from=0&source=${JSON.stringify(eventReq)}`;
     } else if (type === 'teams') {
       return `https://es01.usfirst.org/teams/_search?size=${size}&from=0&source={"query":{"filtered":{"query":{"bool":{"must":[{"bool":{"should":[[{"match":{"team_type":"FTC"}}]]}},{"bool":{"should":[[{"match":{"fk_program_seasons":"251"}},{"match":{"fk_program_seasons":"249"}},{"match":{"fk_program_seasons":"253"}},{"match":{"fk_program_seasons":"247"}}]]}}]}}}},"sort":"team_nickname.raw"}`;
     }
@@ -103,40 +139,44 @@ server.listen(3000, () => {
     state.currentState = 'DOWNLOADING'; 
 
     // pls renew your SSL cert first...
-    request({
-      url: getRequestUrl('teams', config.size),
-      method: 'GET',
-      agent: new https.Agent({
-        host: 'es01.usfirst.org',
-        port: 443,
-        path: '/',
-        rejectUnauthorized: false
+    if (config.sync_tables.teams) {
+      request({
+        url: getRequestUrl('teams', config.size),
+        method: 'GET',
+        agent: new https.Agent({
+          host: 'es01.usfirst.org',
+          port: 443,
+          path: '/',
+          rejectUnauthorized: false
+        })
       })
-    })
-    .then((response) => {
-      state.currentState = 'PROCESSING';
-      return JSON.parse(response);
-    })
-    .then(esData => esData.hits.hits.map(item => convertFormat('team', item._source)))
-    .then((teams) => {
-      save('teams', teams);
-    });
+      .then((response) => {
+        state.currentState = 'PROCESSING';
+        return JSON.parse(response);
+      })
+      .then(esData => esData.hits.hits.map(item => convertFormat('team', item._source)))
+      .then((teams) => {
+        save('teams', teams);
+      });
+    }
 
-    request({
-      url: getRequestUrl('events', config.size),
-      method: 'GET',
-      agent: new https.Agent({
-        host: 'es01.usfirst.org',
-        port: 443,
-        path: '/',
-        rejectUnauthorized: false
+    if (config.sync_tables.events) {
+      request({
+        url: getRequestUrl('events', config.size),
+        method: 'GET',
+        agent: new https.Agent({
+          host: 'es01.usfirst.org',
+          port: 443,
+          path: '/',
+          rejectUnauthorized: false
+        })
       })
-    })
-    .then(JSON.parse)
-    .then(esData => esData.hits.hits.map(item => convertFormat('event', item._source)))
-    .then((events) => {
-      save('events', events);
-    });
+      .then(JSON.parse)
+      .then(esData => esData.hits.hits.map(item => convertFormat('event', item._source)))
+      .then((events) => {
+        save('events', events);
+      });
+    }
   })();
 });
 

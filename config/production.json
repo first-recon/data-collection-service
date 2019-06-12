@@ -5,7 +5,16 @@
         "user": "postgres",
         "password": "postgres",
         "database": "postgres",
-        "host": "recon-db",
+        "host": "68.183.22.48",
         "port": 5432
-    }
+    },
+    "date_range": {
+        "start": "2018-09-01",
+        "end": "2019-09-01"
+    },
+    "sync_tables": {
+        "teams": false,
+        "events": true
+    },
+    "port": 3000
 }
